@@ -1,0 +1,33 @@
+# Production Dockerfile — Golden Age API
+# Build: docker build -f docker/Dockerfile.api -t golden-age-api .
+# Run:   docker run -p 3000:3000 --env-file .env golden-age-api
+
+FROM oven/bun:1.3-slim
+
+WORKDIR /app
+
+# Install only what's needed at runtime
+COPY package.json bun.lock tsconfig.base.json ./
+COPY packages/shared/package.json packages/shared/
+COPY apps/api/package.json apps/api/
+
+# Install dependencies (workspace-aware)
+RUN bun install
+
+# Copy source
+COPY packages/shared/ packages/shared/
+COPY apps/api/ apps/api/
+
+# Non-root user for security
+RUN groupadd -r app && useradd -r -g app -d /app app
+RUN chown -R app:app /app
+USER app
+
+EXPOSE 3000
+
+# Env defaults (override via --env-file or docker-compose)
+ENV NODE_ENV=production
+ENV PORT=3000
+
+# Bun runs TypeScript directly — no build step needed
+CMD ["bun", "run", "apps/api/src/index.ts"]

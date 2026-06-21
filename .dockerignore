@@ -1,0 +1,48 @@
+# Docker ignore — skip unnecessary files from build context
+
+# Dependencies (installed inside container)
+node_modules/
+
+# Git
+.git/
+.gitignore
+
+# Environment (should be passed via --env-file or docker compose)
+.env
+.env.local
+.env.*.local
+
+# Build output
+dist/
+build/
+*.tsbuildinfo
+
+# Docker
+docker/data/
+docker-compose.override.yml
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docs
+*.md
+docs/
+
+# Tests (exclude from production image)
+**/test/
+**/*.test.ts
+**/*.test.tsx
+**/__tests__/
+
+# Nix
+nix/
+result
+
+# Other
+.opencode/
+scripts/

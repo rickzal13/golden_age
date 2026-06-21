@@ -1,0 +1,121 @@
+# Production Docker Compose — Golden Age
+# Usage: docker compose -f docker/docker-compose.yml -f docker/docker-compose.prod.yml up -d
+
+services:
+  # ────────────────────────────────────
+  # Reverse proxy
+  # ────────────────────────────────────
+  nginx:
+    image: golden-age-web:latest
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.web
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      # Mount SSL certs when using Let's Encrypt
+      # - ./certs:/etc/nginx/certs:ro
+      - nginx_logs:/var/log/nginx
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - app_network
+
+  # ────────────────────────────────────
+  # API server (Bun + Hono)
+  # ────────────────────────────────────
+  api:
+    image: golden-age-api:latest
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.api
+    ports:
+      - "3000:3000"
+    env_file: .env
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "bun", "-e", "fetch('http://localhost:3000/health').then(r => { if (!r.ok) throw 1 })"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+    networks:
+      - app_network
+
+  # ────────────────────────────────────
+  # Background worker (BullMQ)
+  # ────────────────────────────────────
+  worker:
+    image: golden-age-worker:latest
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.worker
+    env_file: .env
+    environment:
+      - NODE_ENV=production
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - app_network
+
+  # ────────────────────────────────────
+  # PostgreSQL (production)
+  # ────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-golden_age}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-golden_age}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./apps/api/src/db/migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-golden_age}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - app_network
+
+  # ────────────────────────────────────
+  # Redis (production)
+  # ────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - app_network
+
+volumes:
+  pgdata:
+  redisdata:
+  nginx_logs:
+
+networks:
+  app_network:
+    driver: bridge
